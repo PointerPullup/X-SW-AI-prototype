@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>등심 마블링 3D 시뮬레이션 뷰어</title>
+<style>
+  :root { --panel: #0e1726cc; --accent: #d96a5b; --teal: #29d3c2; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden;
+    font-family: system-ui, "Segoe UI", "Malgun Gothic", sans-serif;
+    background: #0a1018; color: #e8eef6; }
+  #app { width: 100vw; height: 100vh; display: block; }
+  #ui {
+    position: fixed; top: 14px; left: 14px; width: 300px; padding: 15px 17px;
+    background: var(--panel); backdrop-filter: blur(8px);
+    border: 1px solid #ffffff1a; border-radius: 14px; z-index: 10;
+    box-shadow: 0 8px 30px #0008; max-height: calc(100vh - 28px); overflow-y: auto;
+  }
+  #ui h1 { font-size: 15px; margin: 0 0 2px; }
+  #ui .sub { font-size: 11px; color: #8aa0bb; margin-bottom: 12px; }
+  .row { margin: 11px 0; }
+  .row > label { display: flex; justify-content: space-between; font-size: 12px;
+    color: #b9c8db; margin-bottom: 6px; }
+  .row > label span { color: var(--accent); }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .seg { display: flex; gap: 5px; flex-wrap: wrap; }
+  .seg button { flex: 1 1 auto; padding: 5px 7px; font-size: 11px; cursor: pointer;
+    border-radius: 8px; color: #cdd9e8; background: #19273a;
+    border: 1px solid #ffffff14; white-space: nowrap; }
+  .seg button.on { background: var(--accent); color: #1a0d0a; border-color: var(--accent); font-weight: 600; }
+  .seg.stages button { flex: 1 1 100%; text-align: left; }
+  .toggle { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #b9c8db; cursor: pointer; }
+  hr { border: none; border-top: 1px solid #ffffff14; margin: 12px 0; }
+  #stats { font-size: 11px; color: #7f95b0; margin-top: 6px; line-height: 1.7; }
+  #stats b { color: #e8eef6; }
+  #loading { position: fixed; inset: 0; display: flex; align-items: center;
+    justify-content: center; font-size: 15px; color: #9fb3cc; z-index: 20;
+    background: #0a1018; text-align: center; }
+  .legend { display: flex; gap: 12px; margin-top: 8px; font-size: 11px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px;
+    margin-right: 5px; vertical-align: middle; }
+  /* 우측 하단 정보 스택: 통계 패널을 마우스 복셀 패널 위에 쌓는다 */
+  #rightStack {
+    position: fixed; right: 14px; bottom: 14px; width: 250px;
+    display: flex; flex-direction: column; gap: 10px; z-index: 10;
+    max-height: calc(100vh - 28px);
+  }
+  .panelBox {
+    background: var(--panel); backdrop-filter: blur(8px);
+    border: 1px solid #ffffff1a; border-radius: 12px; padding: 12px 15px;
+    box-shadow: 0 8px 30px #0008;
+  }
+  #statBox { overflow-y: auto; }
+  #hover { font-size: 12px; }
+  #hover .htitle { font-size: 11px; color: #8aa0bb; margin-bottom: 6px; }
+  #hover .hval { font-size: 16px; font-weight: 700; }
+  #hover .hcoord { font-size: 11px; color: #7f95b0; margin-top: 4px; }
+  .dot { display:inline-block; width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:middle;}
+</style>
+</head>
+<body>
+<div id="loading">voxel 데이터 로딩 중…</div>
+
+<div id="ui">
+  <h1>🥩 등심 마블링 3D</h1>
+  <div class="sub">셀룰러 마블링 시뮬레이션 뷰어</div>
+
+  <div class="row" id="stageBlock">
+    <label>파이프라인 단계 (알고리즘 순서)</label>
+    <div class="seg stages" id="stageSeg"></div>
+  </div>
+
+  <div class="row" id="threshRow" style="display:none;">
+    <label>표시 임계값 <span id="threshVal">50%</span></label>
+    <input type="range" id="thresh" min="2" max="98" value="50" />
+  </div>
+  <div class="row" id="showMuscleRow" style="display:none;">
+    <label class="toggle"><input type="checkbox" id="showMuscle" /> 근육 함께 보기 (단계 배경)</label>
+  </div>
+
+  <hr>
+
+  <div class="row">
+    <label>단면 슬라이스 축 <span id="axisLabel">없음</span></label>
+    <div class="seg" id="axisSeg">
+      <button data-axis="-1" class="on">전체</button>
+      <button data-axis="2">X</button>
+      <button data-axis="1">Y</button>
+      <button data-axis="0">Z</button>
+      <button data-axis="diag">대각</button>
+    </div>
+  </div>
+  <div class="row" id="diagRow" style="display:none;">
+    <label>대각 방위각 <span id="yawVal">45°</span></label>
+    <input type="range" id="yaw" min="0" max="180" value="45" />
+    <label style="margin-top:8px;">대각 기울기 <span id="pitchVal">0°</span></label>
+    <input type="range" id="pitch" min="-80" max="80" value="0" />
+  </div>
+  <div class="row" id="sliceRow" style="opacity:.4; pointer-events:none;">
+    <label>슬라이스 위치 <span id="sliceVal">50%</span></label>
+    <input type="range" id="slice" min="0" max="100" value="50" />
+  </div>
+
+  <hr>
+
+  <div class="row" id="connRow">
+    <label>결합조직(근주막) 표시</label>
+    <div class="seg" id="connSeg">
+      <button data-conn="normal" class="on">기본색</button>
+      <button data-conn="highlight">대비강조</button>
+      <button data-conn="hidden">숨김</button>
+    </div>
+  </div>
+  <div class="row" id="fatOnlyRow">
+    <label class="toggle"><input type="checkbox" id="fatOnly" /> 지방 네트워크만 보기</label>
+  </div>
+
+</div>
+
+<div id="rightStack">
+  <div id="statBox" class="panelBox">
+    <div class="legend" id="legend"></div>
+    <div id="stats"></div>
+  </div>
+  <div id="hover" class="panelBox">
+    <div class="htitle">마우스 위치 복셀</div>
+    <div class="hval" id="hval">— 표면 위로 마우스를 올리세요</div>
+    <div class="hcoord" id="hcoord"></div>
+  </div>
+</div>
+
+<canvas id="app"></canvas>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ---------------------------------------------------------------------------
+// 데이터 로딩 (호스트 무관: gzip 매직바이트 확인 후 필요할 때만 직접 해제)
+// ---------------------------------------------------------------------------
+async function loadGz(url) {
+  const resp = await fetch(withCacheBust(url), { cache: 'no-store' });
+  if (!resp.ok) throw new Error(`fetch 실패: ${url} (${resp.status})`);
+  let buf = new Uint8Array(await resp.arrayBuffer());
+  if (buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b) {
+    const ds = new DecompressionStream('gzip');
+    const stream = new Blob([buf]).stream().pipeThrough(ds);
+    buf = new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+  return buf;
+}
+
+const LABEL = { MUSCLE: 0, FAT: 1, CONN: 2, AIR: 255 };
+let meta, labels, shade, seeds = [];
+let NX, NY, NZ, N, PLANE;
+const idx = (z, y, x) => (z * NY + y) * NX + x;   // C-order
+
+// ---------------------------------------------------------------------------
+// 색상 (요구사항 3: 근육/결합조직 대비를 명확히)
+// ---------------------------------------------------------------------------
+const _c = new THREE.Color();
+function muscleColor(s) {            // 한우 1++ 살코기: 깊은 체리/크림슨 적색
+  return _c.setRGB(0.52 + 0.17*s, 0.085 + 0.05*s, 0.10 + 0.05*s);
+}
+const FAT_RGB  = [0.96, 0.93, 0.90]; // 따뜻한 흰색(우지)
+const CONN_NORMAL = [0.74, 0.75, 0.74]; // 차분한 은회색(보조 구조, 마블링이 먼저)
+const CONN_HILITE = [0.16, 0.83, 0.78]; // 대비강조: teal
+function scalarColor(v) {            // 0~255 → 어두움→크림
+  const t = v / 255;
+  return _c.setRGB(0.20 + 0.70*t, 0.18 + 0.62*t, 0.16 + 0.48*t);
+}
+// 확률/density 히트맵: 낮음=남색 → 청록 → 노랑 → 높음=빨강 (값이 0 이어도 보임)
+function heat(t) {
+  t = Math.max(0, Math.min(1, t));
+  const h = (1 - t) * 0.66;          // 0.66(파랑) → 0(빨강)
+  return _c.setHSL(h, 0.85, 0.25 + 0.4 * t);
+}
+
+// ---------------------------------------------------------------------------
+// three.js 장면
+// ---------------------------------------------------------------------------
+let renderer, scene, camera, controls, mesh, seedMesh;
+const dummy = new THREE.Object3D();
+let voxelSize = 1.0, clipAxis = -1, clipPos = 0.5;   // 격자 칸을 꽉 채워 틈 제거
+// 단면 평면: clipMode 'none' | 'axis'(축 정렬) | 'diag'(임의 대각선).
+// 대각선은 방위각(yaw, y-x 평면)·기울기(pitch, z 두께 방향)로 법선을 정한다.
+let clipMode = 'none', yawDeg = 45, pitchDeg = 0;
+let connMode = 'normal', fatOnly = false;
+let stage = 'final', threshold = 0.5, showMuscle = false;
+const CACHE_BUST = String(Date.now());
+
+function withCacheBust(url) {
+  return url + (url.includes('?') ? '&' : '?') + 'v=' + CACHE_BUST;
+}
+
+// 데이터 폴더 자동 탐지. 후보 순서:
+//   1) ./out/web/  — 로컬에서 simulate.py 로 갓 생성한 최신 결과 (있으면 우선)
+//   2) ./          — 저장소에 함께 커밋된 뷰어 데이터 (GitHub clone/Pages 용)
+// 덕분에 out/ 없이 clone 만 해도 (또는 GitHub Pages 로 열어도) 뷰어가 동작한다.
+let DATA_DIR = './';
+function dataUrl(name) { return DATA_DIR + name; }
+async function fetchMetaAt(dir) {
+  try {
+    const r = await fetch(withCacheBust(dir + 'meta.json'), { cache: 'no-store' });
+    if (!r.ok) return null;
+    // 디렉터리/404 응답(HTML)을 JSON 으로 오인하지 않도록 실제 파싱으로 검증.
+    return JSON.parse(await r.text());
+  } catch (e) { return null; }
+}
+async function loadMeta() {
+  for (const d of ['./out/web/', './']) {
+    const m = await fetchMetaAt(d);
+    if (m) { DATA_DIR = d; return m; }
+  }
+  throw new Error('meta.json 을 찾을 수 없습니다 (./ 또는 ./out/web/).');
+}
+
+let pres;            // Uint8Array(N): 현재 단계에서 voxel 이 '표시 대상'인가
+let surfIdx;         // Int32Array: 표면 voxel 의 선형 인덱스
+let tissueIdx;       // Int32Array: 현재 표시 대상(present) voxel 전체 (대각 단면 추출용)
+let instVox;         // Int32Array: instanceId → voxel 선형 인덱스 (hover용)
+let curVol = null;   // 현재 scalar 단계의 볼륨 (Uint8Array) 또는 null
+const stageCache = {};
+let needsSurface = true, needsRebuild = true;
+
+function initScene() {
+  const canvas = document.getElementById('app');
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a1018);
+
+  const maxDim = Math.max(NX, NY, NZ);
+  camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, maxDim*8);
+  camera.position.set(NX*0.85, NZ*3.4, NY*1.05);
+  controls = new OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const key = new THREE.DirectionalLight(0xffffff, 1.05);
+  key.position.set(1, 2, 1.3); scene.add(key);
+  const rim = new THREE.DirectionalLight(0x88aaff, 0.35);
+  rim.position.set(-1, 0.5, -1); scene.add(rim);
+  const grid = new THREE.GridHelper(maxDim*2.2, 28, 0x223247, 0x16202e);
+  grid.position.y = -NZ*0.65; scene.add(grid);
+
+  const maxSlab = Math.max(NY*NX, NZ*NX, NZ*NY);
+  const capacity = Math.min(1200000, (meta.stats.tissue_voxels|0) + maxSlab + 16);
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+  const mat = new THREE.MeshStandardMaterial({ roughness: 0.72, metalness: 0.0 });
+  mesh = new THREE.InstancedMesh(geo, mat, capacity);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capacity*3), 3);
+  scene.add(mesh);
+  instVox = new Int32Array(capacity);
+
+  // seed 단계용 작은 큐브들 (주황)
+  const sgeo = new THREE.BoxGeometry(2.4, 2.4, 2.4);
+  const smat = new THREE.MeshStandardMaterial({ color: 0xff8a3d, roughness: 0.5 });
+  seedMesh = new THREE.InstancedMesh(sgeo, smat, Math.max(1, seeds.length));
+  seeds.forEach((s, i) => {
+    dummy.position.set(...worldPos(s[0], s[1], s[2]));
+    dummy.scale.setScalar(1); dummy.updateMatrix();
+    seedMesh.setMatrixAt(i, dummy.matrix);
+  });
+  seedMesh.instanceMatrix.needsUpdate = true;
+  seedMesh.visible = false;
+  scene.add(seedMesh);
+
+  addEventListener('resize', () => {
+    camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+}
+
+function worldPos(z, y, x) { return [ x - NX/2, z - NZ/2, y - NY/2 ]; }
+
+// 현재 단면 평면의 법선 [nz,ny,nx] (없으면 null). 축/대각 모두 통일 처리.
+function clipNormal() {
+  if (clipMode === 'none') return null;
+  if (clipMode === 'axis') {
+    return clipAxis === 0 ? [1, 0, 0] : clipAxis === 1 ? [0, 1, 0] : [0, 0, 1];
+  }
+  const th = yawDeg * Math.PI / 180, ph = pitchDeg * Math.PI / 180;
+  let nx = Math.cos(ph) * Math.cos(th);
+  let ny = Math.cos(ph) * Math.sin(th);
+  let nz = Math.sin(ph);
+  const m = Math.hypot(nx, ny, nz) || 1;
+  return [nz / m, ny / m, nx / m];
+}
+
+// 현재 단계/임계값에 대한 presence(표시 대상) 마스크 계산
+function computePresence() {
+  pres = new Uint8Array(N);
+  const info = meta.stages.find(s => s.key === stage) || {};
+  if (stage === 'seeds' && info.type === 'points') {
+    // 근육 함께 보기 시 스테이크 몸통도 표시 (seed 는 별도 메시)
+    if (showMuscle) for (let i = 0; i < N; i++) if (labels[i] !== LABEL.AIR) pres[i] = 1;
+    return;
+  }
+  if (stage === 'final') {
+    for (let i = 0; i < N; i++) {
+      const l = labels[i];
+      if (l === LABEL.AIR) continue;
+      if (fatOnly && l !== LABEL.FAT) continue;
+      if (connMode === 'hidden' && l === LABEL.CONN) continue;
+      pres[i] = 1;
+    }
+  } else {                                    // scalar 단계
+    const thr = threshold * 255;
+    if (showMuscle) {
+      // '근육 함께 보기' ON 일 때만 스테이크 몸통 전체를 채워 고기 블록처럼.
+      for (let i = 0; i < N; i++) if (labels[i] !== LABEL.AIR) pres[i] = 1;
+    } else {
+      // 기본: 임계값 이상 voxel(그물망)만 표시. 단면 모드면 이 그물망을 잘라
+      // 내부 분포를 그대로 보여준다(근육색 블록으로 덮지 않음).
+      for (let i = 0; i < N; i++) if (curVol[i] >= thr) pres[i] = 1;
+    }
+  }
+}
+
+// presence 에서 표면 voxel(빈 이웃이 하나라도 있는 것) 추출
+function computeSurface() {
+  const out = [];
+  const tis = new Int32Array(N);
+  let tn = 0;
+  for (let z = 0; z < NZ; z++)
+    for (let y = 0; y < NY; y++)
+      for (let x = 0; x < NX; x++) {
+        const i = idx(z,y,x);
+        if (!pres[i]) continue;
+        tis[tn++] = i;
+        if (z===0||y===0||x===0||z===NZ-1||y===NY-1||x===NX-1 ||
+            !pres[i-PLANE] || !pres[i+PLANE] ||
+            !pres[i-NX] || !pres[i+NX] || !pres[i-1] || !pres[i+1]) {
+          out.push(i);
+        }
+      }
+  surfIdx = Int32Array.from(out);
+  tissueIdx = tis.subarray(0, tn);
+}
+
+function colorAt(i, onCut=false) {
+  const info = meta.stages.find(s => s.key === stage) || {};
+  if (stage === 'final') {
+    const l = labels[i];
+    if (l === LABEL.FAT) { const s=shade[i]/255; return _c.setRGB(FAT_RGB[0]+0.03*s, FAT_RGB[1]+0.03*s, FAT_RGB[2]+0.04*s); }
+    if (l === LABEL.CONN) { const a = connMode==='highlight'?CONN_HILITE:CONN_NORMAL; return _c.setRGB(a[0],a[1],a[2]); }
+    return muscleColor(shade[i]/255);
+  }
+  if (stage === 'seeds' && info.type === 'points') return muscleColor(shade[i]/255);   // 근육 배경
+  // scalar(확률/density): '근육 함께 보기' 단면일 때만 몸통 표면은 근육색, 절단면만
+  // 히트맵. 기본 모드는 그물망 전체를 히트맵으로 그려 단면으로 잘라 본다.
+  if (showMuscle && clipMode !== 'none' && !onCut) return muscleColor(shade[i]/255);
+  if (curVol[i] >= threshold * 255) return heat(curVol[i] / 255);
+  return muscleColor(shade[i]/255);
+}
+
+// InstancedMesh 채우기 (클립 적용)
+function rebuild() {
+  const info = meta.stages.find(s => s.key === stage) || {};
+  const pointsOnly = stage === 'seeds' && info.type === 'points';
+  seedMesh.visible = pointsOnly;
+  if (pointsOnly && !showMuscle) {
+    mesh.count = 0; mesh.instanceMatrix.needsUpdate = true;
+    updateStats(seeds.length);
+    return;
+  }
+
+  const decode = (i) => { const z=(i/PLANE)|0, r=i%PLANE; return [z,(r/NX)|0,r%NX]; };
+
+  // 단면 평면(축/대각 통일): 법선 N=[nz,ny,nx], 부호거리 s=N·(z,y,x).
+  // 평면값 cutVal 은 조직 바운딩박스에 대한 s 범위를 clipPos 로 보간.
+  const N3 = clipNormal();
+  const clipActive = !!N3;
+  let cutVal = 0, bandW = 1, nz3 = 0, ny3 = 0, nx3 = 0;
+  if (clipActive) {
+    nz3 = N3[0]; ny3 = N3[1]; nx3 = N3[2];
+    const sMin = Math.min(0, nz3*(NZ-1)) + Math.min(0, ny3*(NY-1)) + Math.min(0, nx3*(NX-1));
+    const sMax = Math.max(0, nz3*(NZ-1)) + Math.max(0, ny3*(NY-1)) + Math.max(0, nx3*(NX-1));
+    cutVal = sMin + clipPos * (sMax - sMin);
+    bandW = Math.abs(nz3) + Math.abs(ny3) + Math.abs(nx3);   // 단면 한 겹 두께(간격 없음 보장)
+  }
+  const sOf = (z,y,x) => nz3*z + ny3*y + nx3*x;
+  const kept = (z,y,x) => !clipActive || sOf(z,y,x) <= cutVal;
+
+  let n = 0; const cap = instVox.length;
+  const put = (z,y,x,i,onCut=false) => {
+    if (n >= cap) return;
+    dummy.position.set(...worldPos(z,y,x));
+    dummy.scale.setScalar(voxelSize); dummy.updateMatrix();
+    mesh.setMatrixAt(n, dummy.matrix);
+    mesh.setColorAt(n, colorAt(i, onCut));
+    instVox[n] = i; n++;
+  };
+
+  // (a) 표면(클립 유지 측). 모든 단계에서 고기 몸통을 솔리드 블록으로 그린다.
+  for (let k = 0; k < surfIdx.length; k++) {
+    const i = surfIdx[k]; const [z,y,x] = decode(i);
+    if (kept(z,y,x)) put(z,y,x,i);
+  }
+  // (b) 절단면: 평면에 인접한 한 겹(임의 방향). onCut=true → scalar 단계는 히트맵.
+  if (clipActive) {
+    const lo = cutVal - bandW;
+    for (let k = 0; k < tissueIdx.length; k++) {
+      const i = tissueIdx[k]; const [z,y,x] = decode(i);
+      const s = sOf(z,y,x);
+      if (s <= cutVal && s > lo) put(z,y,x,i,true);
+    }
+  }
+
+  mesh.count = n;
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.instanceColor.needsUpdate = true;
+  updateStats(n);
+}
+
+function updateStats(n) {
+  const d = meta.debug || {};
+  const m = d.metrics || {};
+  const cal = d.calibration || {};
+  const info = meta.stages.find(s => s.key === stage) || {};
+  const typ = stage === 'final' ? '라벨 마스크'
+            : info.type === 'scalar' ? '밀도장'
+            : info.type === 'points' ? '점' : info.type;
+  const fmt = (v, digits=1) => Number.isFinite(v) ? v.toFixed(digits) : '-';
+  document.getElementById('stats').innerHTML =
+    `현재 단계: <b>${info.name || stage}</b> <span style="color:#7f95b0">[${typ}]</span><br>` +
+    `렌더 복셀: <b>${n.toLocaleString()}</b> · 해상도 <b>${NX}×${NY}×${NZ}</b><br>` +
+    `지방 <b>${meta.stats.fat_pct.toFixed(1)}%</b> · ` +
+    `근육 <b>${meta.stats.muscle_pct.toFixed(1)}%</b><br>` +
+    `덩어리 수 <b>${m.component_count ?? '-'}</b> · 최대덩어리비 <b>${fmt(m.largest_component_ratio, 3)}</b> · ` +
+    `평균두께 <b>${fmt(m.average_thickness_px, 2)}px</b><br>` +
+    `방향성 <b>${fmt(m.orientation_coherence, 3)}</b> · 곡선 <b>${cal.n_curves ?? '-'}</b> · ` +
+    `폭배율 <b>${fmt(cal.width_scale, 2)}</b>`;
+}
+
+// 단계 전환 (필요시 볼륨 로딩)
+async function setStage(key) {
+  stage = key;
+  const info = meta.stages.find(s => s.key === key);
+  const isScalar = info.type === 'scalar';
+  document.getElementById('threshRow').style.display = isScalar ? '' : 'none';
+  // 단계별 기본 임계값: 입력 확률맵은 거의 전부 표시(꽉 찬 히트맵), 구조 단계는 등치면.
+  if (isScalar) {
+    const defThr = (key === 'input') ? 3 : 40;
+    threshold = defThr / 100;
+    const sl = document.getElementById('thresh');
+    sl.value = defThr;
+    document.getElementById('threshVal').textContent = defThr + '%';
+  }
+  // '근육 함께 보기' 는 최종 단계 외(scalar/seeds)에서만 의미 있음
+  document.getElementById('showMuscleRow').style.display =
+    (key === 'final') ? 'none' : '';
+  // 결합조직/지방만 토글은 final 에서만 의미 있음
+  const finalOnly = key === 'final';
+  document.getElementById('connRow').style.opacity = finalOnly ? 1 : 0.35;
+  document.getElementById('connRow').style.pointerEvents = finalOnly ? 'auto':'none';
+  document.getElementById('fatOnlyRow').style.opacity = finalOnly ? 1 : 0.35;
+  document.getElementById('fatOnlyRow').style.pointerEvents = finalOnly ? 'auto':'none';
+  updateLegend();
+
+  if (isScalar) {
+    if (!stageCache[key]) {
+      document.getElementById('hval').textContent = '단계 로딩 중…';
+      stageCache[key] = await loadGz(dataUrl(info.file));
+    }
+    curVol = stageCache[key];
+  } else curVol = null;
+
+  needsSurface = true; needsRebuild = true;
+}
+
+function updateLegend() {
+  const el = document.getElementById('legend');
+  if (stage === 'final') {
+    const conn = connMode==='highlight'
+      ? `<span><i style="background:#29d3c2"></i>결합조직(강조)</span>`
+      : connMode==='hidden' ? '' : `<span><i style="background:#b3b8c2"></i>결합조직</span>`;
+    el.innerHTML = `<span><i style="background:#b23a30"></i>근육</span>`+
+                   `<span><i style="background:#f3efe6"></i>지방</span>`+ conn;
+  } else if (stage === 'seeds') {
+    el.innerHTML = `<span>seed segment 히트맵:</span>` +
+      `<span><i style="background:#1f3a8a"></i>낮음</span>` +
+      `<span><i style="background:#e8e84a"></i>중간</span>` +
+      `<span><i style="background:#d23b2a"></i>높음</span>` +
+      (showMuscle ? `<span><i style="background:#b23a30"></i>근육</span>` : '');
+  } else {
+    el.innerHTML = `<span>확률/밀도 히트맵:</span>` +
+      `<span><i style="background:#1f3a8a"></i>낮음</span>` +
+      `<span><i style="background:#e8e84a"></i>중간</span>` +
+      `<span><i style="background:#d23b2a"></i>높음</span>` +
+      (showMuscle ? `<span><i style="background:#b23a30"></i>근육</span>` : '');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Hover (요구사항 4): 레이캐스트로 복셀 종류 표시
+// ---------------------------------------------------------------------------
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+let hoverPending = false, lastHover = 0;
+addEventListener('pointermove', (e) => {
+  pointer.x = (e.clientX/innerWidth)*2 - 1;
+  pointer.y = -(e.clientY/innerHeight)*2 + 1;
+  hoverPending = true;
+});
+function doHover() {
+  const info = meta.stages.find(s => s.key === stage) || {};
+  if (!hoverPending || (stage === 'seeds' && info.type === 'points')) return;
+  const now = performance.now();
+  if (now - lastHover < 50) return;       // throttle
+  lastHover = now; hoverPending = false;
+
+  raycaster.setFromCamera(pointer, camera);
+  const hit = raycaster.intersectObject(mesh);
+  const hv = document.getElementById('hval'), hc = document.getElementById('hcoord');
+  if (hit.length === 0 || hit[0].instanceId == null || hit[0].instanceId >= mesh.count) {
+    hv.innerHTML = '— 표면 위로 마우스를 올리세요'; hc.textContent = ''; return;
+  }
+  const i = instVox[hit[0].instanceId];
+  const z=(i/PLANE)|0, r=i%PLANE, y=(r/NX)|0, x=r%NX;
+  let label, color;
+  if (stage === 'final') {
+    const l = labels[i];
+    if (l===LABEL.FAT){label='지방 (Fat)'; color='#f3efe6';}
+    else if (l===LABEL.CONN){label='결합조직 (Connective)'; color='#b3b8c2';}
+    else {label='근육 (Muscle)'; color='#b23a30';}
+  } else {
+    const v = (curVol[i]/255*100).toFixed(0);
+    const nm = meta.stages.find(s=>s.key===stage).name;
+    label = `${nm.replace(/^\d+\.\s*/,'')} · ${v}%`; color = '#f2ecd9';
+  }
+  hv.innerHTML = `<span class="dot" style="background:${color}"></span>${label}`;
+  hc.textContent = `voxel (x:${x}, y:${y}, z:${z})`;
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  if (needsSurface) { computePresence(); computeSurface(); needsSurface = false; needsRebuild = true; }
+  if (needsRebuild) { rebuild(); needsRebuild = false; }
+  doHover();
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// ---------------------------------------------------------------------------
+// UI
+// ---------------------------------------------------------------------------
+function bindUI() {
+  // 단계 버튼 (meta.stages 순서대로)
+  const seg = document.getElementById('stageSeg');
+  meta.stages.forEach(s => {
+    const b = document.createElement('button');
+    b.textContent = s.name; b.dataset.key = s.key;
+    if (s.key === 'final') b.classList.add('on');
+    b.onclick = () => {
+      seg.querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on'); setStage(s.key);
+    };
+    seg.appendChild(b);
+  });
+
+  const axisNames = {'-1':'없음','0':'Z(두께)','1':'Y','2':'X','diag':'대각'};
+  const sliceRow = document.getElementById('sliceRow');
+  const diagRow = document.getElementById('diagRow');
+  document.querySelectorAll('#axisSeg button').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#axisSeg button').forEach(b=>b.classList.remove('on'));
+      btn.classList.add('on');
+      const v = btn.dataset.axis;
+      if (v === 'diag') { clipMode = 'diag'; }
+      else { clipAxis = parseInt(v); clipMode = clipAxis < 0 ? 'none' : 'axis'; }
+      document.getElementById('axisLabel').textContent = axisNames[v];
+      const a = clipMode !== 'none';
+      sliceRow.style.opacity = a?1:0.4; sliceRow.style.pointerEvents = a?'auto':'none';
+      diagRow.style.display = (clipMode === 'diag') ? '' : 'none';
+      needsSurface = true;   // presence 가 단면 모드에 의존(scalar 단계 몸통 표시)
+    };
+  });
+  document.getElementById('slice').oninput = (e) => {
+    clipPos = e.target.value/100;
+    document.getElementById('sliceVal').textContent = e.target.value+'%';
+    needsRebuild = true;
+  };
+  document.getElementById('yaw').oninput = (e) => {
+    yawDeg = parseFloat(e.target.value);
+    document.getElementById('yawVal').textContent = e.target.value+'°';
+    needsRebuild = true;   // 법선만 변경 → presence/tissueIdx 불변
+  };
+  document.getElementById('pitch').oninput = (e) => {
+    pitchDeg = parseFloat(e.target.value);
+    document.getElementById('pitchVal').textContent = e.target.value+'°';
+    needsRebuild = true;
+  };
+  document.getElementById('thresh').oninput = (e) => {
+    threshold = e.target.value/100;
+    document.getElementById('threshVal').textContent = e.target.value+'%';
+    needsSurface = true;
+  };
+  document.querySelectorAll('#connSeg button').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#connSeg button').forEach(b=>b.classList.remove('on'));
+      btn.classList.add('on'); connMode = btn.dataset.conn;
+      updateLegend(); needsSurface = true;   // hidden 은 presence 영향
+    };
+  });
+  document.getElementById('fatOnly').onchange = (e) => { fatOnly = e.target.checked; needsSurface = true; };
+  document.getElementById('showMuscle').onchange = (e) => { showMuscle = e.target.checked; updateLegend(); needsSurface = true; };
+}
+
+(async function main() {
+  try {
+    meta = await loadMeta();
+    NX=meta.nx; NY=meta.ny; NZ=meta.nz; N=NX*NY*NZ; PLANE=NY*NX;
+    labels = await loadGz(dataUrl('labels.bin.gz'));
+    shade = await loadGz(dataUrl('shade.bin.gz'));
+    try { seeds = await (await fetch(withCacheBust(dataUrl('seeds.json')), { cache: 'no-store' })).json(); } catch(e){ seeds=[]; }
+    initScene(); bindUI(); updateLegend();
+    document.getElementById('loading').style.display = 'none';
+    animate();
+  } catch (err) {
+    document.getElementById('loading').innerHTML =
+      `로딩 실패: ${err.message}<br><br><span style="font-size:12px;color:#7f95b0">`+
+      `index.html 은 file:// 로 직접 열면 안 됩니다.<br>`+
+      `prototype4 폴더에서 먼저 <b>python simulate.py</b> 로 out/ 을 만든 뒤,<br>`+
+      `같은 폴더에서 <b>python -m http.server 8001</b> 실행 후<br>`+
+      `http://localhost:8001 접속.</span>`;
+    console.error(err);
+  }
+})();
+</script>
+</body>
+</html>

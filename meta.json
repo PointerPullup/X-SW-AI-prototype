@@ -1,0 +1,74 @@
+{
+  "nz": 56,
+  "ny": 340,
+  "nx": 420,
+  "order": "C",
+  "labels": {
+    "muscle": 0,
+    "fat": 1,
+    "connective": 2,
+    "air": 255
+  },
+  "stages": [
+    {
+      "key": "input",
+      "name": "0. 지방 확률장 (AI 입력)",
+      "type": "scalar",
+      "file": "stage_input.bin.gz"
+    },
+    {
+      "key": "meat_mask",
+      "name": "1. 고기 마스크",
+      "type": "scalar",
+      "file": "stage_meat_mask.bin.gz"
+    },
+    {
+      "key": "orientation",
+      "name": "2. 근섬유 결 방향 (구조텐서)",
+      "type": "scalar",
+      "file": "stage_orientation.bin.gz"
+    },
+    {
+      "key": "fat_threshold",
+      "name": "3. 임계화 지방 (목표비율)",
+      "type": "scalar",
+      "file": "stage_fat_threshold.bin.gz"
+    },
+    {
+      "key": "fat_clean",
+      "name": "4. 정리된 지방",
+      "type": "scalar",
+      "file": "stage_fat_clean.bin.gz"
+    },
+    {
+      "key": "final",
+      "name": "5. 최종 라벨 (근육/지방)",
+      "type": "labels",
+      "file": "labels.bin.gz"
+    }
+  ],
+  "stats": {
+    "fat_pct": 27.954241586169548,
+    "connective_pct": 0.0,
+    "muscle_pct": 72.04575841383046,
+    "tissue_voxels": 4978232,
+    "n_seeds": 0
+  },
+  "debug": {
+    "metrics": {
+      "component_count": 1156.7,
+      "largest_component_ratio": 0.05203159545001304,
+      "average_thickness_px": 2.1338314080615834,
+      "orientation_coherence": 0.4692322611808777,
+      "fat_ratio": 0.2795424158616955,
+      "slice_fleck_count": 1156.6666666666667,
+      "slice_largest_ratio": 0.05203159545001304,
+      "fat_thickness_avg_px": 2.1338314080615834,
+      "fat_thickness_p90_px": 2.8284271247461903,
+      "uniformity_cv": 0.31800828054502234,
+      "fiber_coherence": 0.4692322611808777,
+      "threshold": 0.5
+    },
+    "calibration": {}
+  }
+}
